@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pdf-kindle-optimizer"
+version = "1.0.0"
+description = "縦書きPDFの余白を除去してKindle端末で見やすくするツール"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+authors = [
+    {name = "PDF Kindle Optimizer"}
+]
+keywords = ["pdf", "kindle", "ebook", "japanese", "vertical-text", "crop"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Graphics :: Graphics Conversion",
+    "Topic :: Text Processing :: General",
+]
+
+dependencies = [
+    "PyMuPDF>=1.23.0",
+    "Pillow>=9.0.0",
+    "numpy>=1.20.0",
+    "click>=8.0.0",
+    "scipy>=1.10.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "mypy>=1.0.0",
+]
+
+[project.scripts]
+pdf-kindle = "pdf_kindle_optimizer.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/example/pdf-kindle-optimizer"
+Repository = "https://github.com/example/pdf-kindle-optimizer"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pdf_kindle_optimizer*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py38']
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
