@@ -72,9 +72,12 @@ epub/
 
 ## 対応Kindleデバイス
 
-- Kindle Paperwhite（デフォルト）
-- Kindle Oasis
-- Kindle Basic
-- Kindle Scribe
+| デバイス | 解像度 | アスペクト比 |
+|----------|--------|--------------|
+| Kindle Paperwhite（デフォルト）| 1236 x 1648 | 約 0.75 |
+| Kindle Oasis | 1264 x 1680 | 約 0.75 |
+| Kindle Basic | 1072 x 1448 | 約 0.74 |
+| Kindle Scribe | 1860 x 2480 | 約 0.75 |
 
 AIに「〇〇用に最適化して」と言えば、そのデバイス向けに調整されます。
+AIはKindle画面のアスペクト比を考慮して最適なクロップ位置を決定します。
