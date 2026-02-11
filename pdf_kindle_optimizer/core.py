@@ -38,6 +38,7 @@ class PageInfo:
     original_size: Tuple[float, float]
     crop_box: CropBox
     content_ratio: float  # コンテンツ領域の割合
+    page_type: str = 'unknown'  # 'left', 'right', 'unknown'
 
 
 class PDFProcessor:
@@ -69,6 +70,46 @@ class PDFProcessor:
     def page_count(self) -> int:
         """ページ数を取得"""
         return len(self.doc)
+    
+    @staticmethod
+    def determine_page_type(page_idx: int, first_page_is_right: bool = True) -> str:
+        """
+        ページの種類（左/右）を判定する
+        
+        Args:
+            page_idx: ページインデックス（0始まり）
+            first_page_is_right: 最初のページが右ページかどうか
+            
+        Returns:
+            'left' または 'right'
+        """
+        # ページ番号（1始まり）で判定
+        page_num = page_idx + 1
+        is_odd = (page_num % 2 == 1)
+        
+        if first_page_is_right:
+            # 最初のページが右ページの場合、奇数ページは右、偶数ページは左
+            return 'right' if is_odd else 'left'
+        else:
+            # 最初のページが左ページの場合、奇数ページは左、偶数ページは右
+            return 'left' if is_odd else 'right'
+    
+    @staticmethod
+    def get_page_type_label(page_type: str, binding: str = 'vertical') -> str:
+        """
+        ページタイプのラベルを取得する
+        
+        Args:
+            page_type: 'left' または 'right'
+            binding: 開き方 ('vertical'=縦開き, 'horizontal'=横開き)
+            
+        Returns:
+            日本語のページタイプラベル
+        """
+        if binding == 'vertical':
+            return '右ページ' if page_type == 'right' else '左ページ'
+        else:
+            return '上ページ' if page_type == 'right' else '下ページ'
     
     def get_page_as_image(self, page_num: int, dpi: int = 150) -> Image.Image:
         """

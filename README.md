@@ -1,97 +1,54 @@
 # PDF Kindle Optimizer
 
-縦書きPDFの余白を自動検出・除去し、Kindle端末で見やすく最適化するツールです。
+縦書きPDFの余白を自動検出・除去し、Kindle端末で見やすく最適化するCLIツールです。
 
-## AI アシスタント向けクイックガイド
+## 特徴
 
-このツールはAIアシスタント（Claude、ChatGPT等）と一緒に使うことを想定しています。
-AIにPDFファイルを処理してもらう場合は、以下のように依頼してください。
+- **AI支援クロップ**: プレビュー画像を生成し、AIアシスタント（Claude等）と協力して最適なクロップ位置を決定
+- **左右ページ別設定**: 縦開き（右綴じ）・横開き（左綴じ）に対応、左右ページで異なる余白設定が可能
+- **自動検出モード**: テキスト位置からコンテンツ領域を自動検出
+- **スキャンPDF対応**: 画像ベースのPDFでも二値化+連結成分分析で文字領域を検出
+- **複数デバイス対応**: Kindle Paperwhite, Oasis, Basic, Scribe のプロファイルを内蔵
 
-### 使い方の例
-
-```
-「input/にあるPDFをKindle用に最適化して」
-「このPDFの余白を除去して」
-「スキャンPDFをKindle Paperwhiteで読みやすくして」
-```
-
-AIアシスタントが自動でコマンドを実行し、最適化されたPDFを `output/` フォルダに出力します。
-
----
-
-## フォルダ構成
-
-```
-epub/
-├── input/          # ← PDFファイルをここに配置
-├── output/         # ← 処理済みファイルがここに出力される
-├── preview/        # ← プレビュー画像が出力される
-└── pdf_kindle_optimizer/
-```
-
-## セットアップ
+## インストール
 
 ```bash
+git clone https://github.com/yourusername/pdf-kindle-optimizer.git
+cd pdf-kindle-optimizer
 pip install -e .
 ```
 
----
+## クイックスタート
 
-## AI アシスタント向け実行ガイド
-
-### ワークフロー1: AI支援クロップ（推奨）
-
-AIがプレビュー画像を確認してクロップ位置を判断するワークフローです。
-
-**ステップ1: PDFファイルを確認**
-```bash
-ls input/
-```
-
-**ステップ2: プレビュー画像を生成**
-```bash
-pdf-kindle preview input/[ファイル名].pdf
-```
-→ `preview/` フォルダにサンプルページ画像が出力されます
-
-**ステップ3: 画像を確認してクロップ位置を判断（Kindleサイズを考慮）**
-出力された画像を確認し、余白をどれだけ除去すべきか判断します。
-
-> **重要**: Kindleデバイスのアスペクト比（約0.75）を考慮してクロップ位置を決定してください。
-> - コンテンツが縦長すぎる場合（比率 < 0.75）→ 上下を多めにカット
-> - コンテンツが横長すぎる場合（比率 > 0.75）→ 左右を多めにカット
-
-**ステップ4: クロップを実行**
-```bash
-pdf-kindle crop input/[ファイル名].pdf --left [X] --right [Y] --top [Z] --bottom [W]
-```
-→ `output/[ファイル名]_kindle.pdf` が生成されます
-
----
-
-### ワークフロー2: 自動検出クロップ
-
-テキスト位置からコンテンツ領域を自動検出します。
-
-**単一ファイル処理:**
-```bash
-pdf-kindle auto input/[ファイル名].pdf
-```
-
-**inputフォルダ全体を一括処理:**
-```bash
-pdf-kindle auto
-```
-
----
-
-### ワークフロー3: スキャンPDF処理
-
-画像ベースのPDF（テキストが埋め込まれていない）の場合：
+### 1. PDFファイルを配置
 
 ```bash
-pdf-kindle auto --scan --auto-threshold -m 0 input/[ファイル名].pdf
+cp your-book.pdf input/
 ```
+
+### 2. プレビュー画像を生成
+
+```bash
+pdf-kindle preview input/your-book.pdf
+```
+
+`preview/` フォルダにサンプルページ画像が出力されます。
+
+### 3. クロップを実行
+
+```bash
+# 全ページ共通設定
+pdf-kindle crop input/your-book.pdf --left 10 --right 10 --top 5 --bottom 5
+
+# 左右ページ別設定（縦開きの場合）
+pdf-kindle crop input/your-book.pdf --binding vertical \
+  --left-left 15 --left-right 5 --left-top 5 --left-bottom 5 \
+  --right-left 5 --right-right 15 --right-top 5 --right-bottom 5
+```
+
+`output/` フォルダに最適化されたPDFが出力されます。
+
+> **Note**: cropコマンド完了時にpreviewフォルダは自動でクリーンアップされます。
 
 ---
 
@@ -99,41 +56,52 @@ pdf-kindle auto --scan --auto-threshold -m 0 input/[ファイル名].pdf
 
 ### preview - プレビュー画像生成
 
+PDFのサンプルページを画像として出力します。
+
 ```bash
-pdf-kindle preview input/book.pdf
-pdf-kindle preview input/book.pdf -p 1,10,20,50    # 特定ページを出力
-pdf-kindle preview input/book.pdf --dpi 300        # 高解像度で出力
-pdf-kindle preview input/book.pdf -n 10            # ランダムに10ページ出力
+pdf-kindle preview input/book.pdf                    # ランダムに5ページ選択
+pdf-kindle preview input/book.pdf --binding vertical # 縦開き（左右ページ情報付き）
+pdf-kindle preview input/book.pdf -p 1,10,20,50      # 特定ページを出力
+pdf-kindle preview input/book.pdf --dpi 300          # 高解像度で出力
+pdf-kindle preview input/book.pdf -n 10              # ランダムに10ページ出力
 ```
 
 | オプション | 説明 | デフォルト |
 |------------|------|------------|
 | `-o, --output-dir` | 出力フォルダ | `preview` |
-| `-p, --pages` | 出力ページ番号（カンマ区切り） | `1,5,10` |
-| `-n, --num-pages` | ランダム選択数 | - |
+| `-p, --pages` | 出力ページ番号（カンマ区切り） | ランダム選択 |
+| `-n, --num-pages` | ランダム選択数 | `5` |
 | `--dpi` | 画像解像度 | `150` |
-
----
+| `--binding` | 開き方 (`vertical`/`horizontal`) | `vertical` |
+| `--first-page-right` | 最初のページを右ページとして扱う | オン |
 
 ### crop - 手動クロップ
 
+指定した割合でPDFをクロップします。
+
 ```bash
+# 全ページ共通設定
 pdf-kindle crop input/book.pdf --left 10 --right 10 --top 5 --bottom 5
+
+# 左右ページ別設定
+pdf-kindle crop input/book.pdf --binding vertical \
+  --left-left 15 --left-right 5 --left-top 5 --left-bottom 5 \
+  --right-left 5 --right-right 15 --right-top 5 --right-bottom 5
 ```
 
 | オプション | 説明 | デフォルト |
 |------------|------|------------|
-| `-o, --output` | 出力ファイルパス | `output/{ファイル名}_kindle.pdf` |
+| `-o, --output` | 出力ファイルパス | `output/{name}_kindle.pdf` |
 | `-d, --device` | Kindleデバイス種類 | `paperwhite` |
-| `--left` | 左からカット（%） | `0` |
-| `--right` | 右からカット（%） | `0` |
-| `--top` | 上からカット（%） | `0` |
-| `--bottom` | 下からカット（%） | `0` |
+| `--left`, `--right`, `--top`, `--bottom` | 各辺からカット（%）- 全ページ共通 | `0` |
+| `--binding` | 開き方 (`vertical`/`horizontal`) | `vertical` |
+| `--left-*`, `--right-*` | 左右ページ別設定（%） | - |
+| `--clean-preview` | 処理完了後にpreviewをクリーンアップ | オン |
 | `-v, --verbose` | 詳細出力 | オフ |
 
----
-
 ### auto - 自動検出クロップ
+
+テキスト位置からコンテンツ領域を自動検出してクロップします。
 
 ```bash
 # 通常PDF
@@ -142,22 +110,53 @@ pdf-kindle auto input/book.pdf
 # スキャンPDF（Otsu法で自動閾値）
 pdf-kindle auto --scan --auto-threshold -m 0 input/book.pdf
 
-# 閾値を手動指定
-pdf-kindle auto -t 230 input/book.pdf
+# inputフォルダの全PDFを一括処理
+pdf-kindle auto
 ```
 
 | オプション | 説明 | デフォルト |
 |------------|------|------------|
-| `-o, --output` | 出力ファイルパス | `output/{ファイル名}_kindle.pdf` |
+| `-o, --output` | 出力ファイルパス | `output/{name}_kindle.pdf` |
 | `-d, --device` | Kindleデバイス種類 | `paperwhite` |
 | `-t, --threshold` | 余白検出の閾値 (0-255) | `250` |
 | `-m, --margin` | 追加マージン (割合) | `0.005` |
 | `--no-uniform` | ページ個別クロップ | 統一クロップ |
 | `--scan` | スキャンPDF用モード | オフ |
 | `--auto-threshold` | Otsu法で自動閾値 | オフ |
-| `-i, --input-dir` | 入力フォルダ | `input` |
-| `--output-dir` | 出力フォルダ | `output` |
 | `-v, --verbose` | 詳細出力 | オフ |
+
+### reorder - ページ順序修正
+
+見開きPDF分割後のページ順序を修正します。
+
+```bash
+pdf-kindle reorder input/book.pdf
+```
+
+2,1,4,3,6,5... → 1,2,3,4,5,6... のように並び替えます。
+
+### clean - プレビュークリーンアップ
+
+previewフォルダ内の画像ファイルを削除します。
+
+```bash
+pdf-kindle clean
+```
+
+---
+
+## フォルダ構成
+
+```
+pdf-kindle-optimizer/
+├── input/          # PDFファイルを配置
+├── output/         # 処理済みファイルが出力される
+├── preview/        # プレビュー画像が出力される（自動クリーンアップ）
+└── pdf_kindle_optimizer/
+    ├── __init__.py
+    ├── cli.py      # CLIコマンド
+    └── core.py     # コア処理
+```
 
 ---
 
@@ -170,7 +169,26 @@ pdf-kindle auto -t 230 input/book.pdf
 | Kindle Basic | 1072 x 1448 | 約 0.74 | `-d basic` |
 | Kindle Scribe | 1860 x 2480 | 約 0.75 | `-d scribe` |
 
-> **ヒント**: クロップ後のコンテンツがKindle画面を最大限活用できるよう、アスペクト比（約0.75）を意識してクロップ位置を決定すると、より読みやすい表示になります。
+> **Tip**: クロップ後のコンテンツがKindle画面を最大限活用できるよう、アスペクト比（約0.75）を意識してクロップ位置を決定すると、より読みやすい表示になります。
+
+---
+
+## Pythonライブラリとして使用
+
+```python
+from pdf_kindle_optimizer import PDFProcessor, KindleOptimizer
+
+with PDFProcessor("input.pdf") as processor:
+    print(f"ページ数: {processor.page_count}")
+    
+    optimizer = KindleOptimizer(processor)
+    optimizer.optimize_for_kindle(
+        output_path="output.pdf",
+        device="paperwhite",
+        uniform_crop=True,
+        margin_percent=0.02
+    )
+```
 
 ---
 
@@ -195,35 +213,6 @@ pip install -e .
 
 ---
 
-## Pythonライブラリとして使用
-
-```python
-from pdf_kindle_optimizer import PDFProcessor, KindleOptimizer
-
-with PDFProcessor("input.pdf") as processor:
-    print(f"ページ数: {processor.page_count}")
-    
-    optimizer = KindleOptimizer(processor)
-    optimizer.optimize_for_kindle(
-        output_path="output.pdf",
-        device="paperwhite",
-        uniform_crop=True,
-        threshold=250,
-        margin_percent=0.02
-    )
-```
-
-### エクスポートされるクラス
-
-| クラス | 説明 |
-|--------|------|
-| `PDFProcessor` | PDF処理のメインクラス |
-| `KindleOptimizer` | Kindle向け最適化クラス |
-| `CropBox` | クロップ領域を表すデータクラス |
-| `PageInfo` | ページ情報を表すデータクラス |
-
----
-
 ## 動作要件
 
 - Python 3.8以上
@@ -232,6 +221,8 @@ with PDFProcessor("input.pdf") as processor:
 - NumPy 1.20.0以上
 - SciPy 1.10.0以上
 - Click 8.0.0以上
+
+---
 
 ## ライセンス
 

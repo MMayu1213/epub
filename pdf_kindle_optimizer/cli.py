@@ -7,6 +7,7 @@ import os
 import sys
 import glob
 import random
+import shutil
 from pathlib import Path
 from .core import PDFProcessor, KindleOptimizer
 
@@ -14,6 +15,30 @@ from .core import PDFProcessor, KindleOptimizer
 DEFAULT_INPUT_DIR = "input"
 DEFAULT_OUTPUT_DIR = "output"
 DEFAULT_PREVIEW_DIR = "preview"
+
+
+def clean_preview_folder(preview_dir: str = DEFAULT_PREVIEW_DIR, verbose: bool = False):
+    """previewフォルダ内の画像ファイルを削除"""
+    preview_path = Path(preview_dir)
+    if not preview_path.exists():
+        return 0
+    
+    # 削除対象の拡張子
+    extensions = ['*.png', '*.jpg', '*.jpeg', '*.gif', '*.bmp', '*.webp']
+    deleted_count = 0
+    
+    for ext in extensions:
+        for file in preview_path.glob(ext):
+            try:
+                file.unlink()
+                deleted_count += 1
+                if verbose:
+                    click.echo(f"削除: {file}")
+            except Exception as e:
+                if verbose:
+                    click.echo(f"削除失敗: {file} - {e}")
+    
+    return deleted_count
 
 
 def print_progress(current: int, total: int, stage: str = ""):
@@ -80,28 +105,46 @@ def cli(ctx):
     default=150,
     help='画像の解像度（デフォルト: 150）'
 )
-def preview(input_pdf, output_dir, pages, num_pages, dpi):
+@click.option(
+    '--binding',
+    type=click.Choice(['vertical', 'horizontal']),
+    default='vertical',
+    help='開き方 (vertical=縦開き/右綴じ, horizontal=横開き/左綴じ)'
+)
+@click.option(
+    '--first-page-right/--first-page-left',
+    default=True,
+    help='最初のページを右ページとして扱う（デフォルト: 右ページ）'
+)
+def preview(input_pdf, output_dir, pages, num_pages, dpi, binding, first_page_right):
     """
     PDFのサンプルページを画像として出力します。
     
-    出力された画像をAIに見せて、どこでカットすべきか判断してもらうために使用します。
+    出力された画像をAIに見せて、左右ページ別にどこでカットすべきか判断してもらうために使用します。
     デフォルトではランダムに複数ページを選択します。
     
+    開き方（縦開き/横開き）を指定すると、各ページが左右どちらかを表示します。
+    
     例:
-      pdf-kindle preview input/book.pdf           # ランダムに5ページ選択
-      pdf-kindle preview input/book.pdf -n 10    # ランダムに10ページ選択
-      pdf-kindle preview input/book.pdf -p 1,10,50  # 指定ページを出力
+      pdf-kindle preview input/book.pdf                    # ランダムに5ページ選択
+      pdf-kindle preview input/book.pdf --binding vertical # 縦開き（右綴じ）
+      pdf-kindle preview input/book.pdf -n 10              # ランダムに10ページ選択
+      pdf-kindle preview input/book.pdf -p 1,10,50         # 指定ページを出力
     """
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
     input_name = Path(input_pdf).stem
     
+    # 開き方のラベル
+    binding_label = "縦開き（右綴じ）" if binding == 'vertical' else "横開き（左綴じ）"
+    
     try:
         with PDFProcessor(input_pdf) as processor:
             total_pages = processor.page_count
             click.echo(f"PDF: {input_pdf}")
             click.echo(f"総ページ数: {total_pages}")
+            click.echo(f"開き方: {binding_label}")
             click.echo()
             
             # ページ番号を決定
@@ -135,6 +178,7 @@ def preview(input_pdf, output_dir, pages, num_pages, dpi):
             click.echo()
             
             exported_files = []
+            page_info_list = []
             
             for page_num in page_nums:
                 if page_num < 1 or page_num > total_pages:
@@ -144,6 +188,10 @@ def preview(input_pdf, output_dir, pages, num_pages, dpi):
                 # 0始まりに変換
                 page_idx = page_num - 1
                 
+                # ページタイプを判定
+                page_type = PDFProcessor.determine_page_type(page_idx, first_page_right)
+                page_type_label = PDFProcessor.get_page_type_label(page_type, binding)
+                
                 # 画像を取得
                 img = processor.get_page_as_image(page_idx, dpi=dpi)
                 
@@ -151,18 +199,27 @@ def preview(input_pdf, output_dir, pages, num_pages, dpi):
                 output_file = output_path / f"{input_name}_page{page_num}.png"
                 img.save(str(output_file))
                 exported_files.append(str(output_file))
+                page_info_list.append({
+                    'page_num': page_num,
+                    'page_type': page_type,
+                    'page_type_label': page_type_label,
+                    'file': str(output_file)
+                })
                 
-                click.echo(f"✓ ページ {page_num} → {output_file}")
+                click.echo(f"✓ ページ {page_num} ({page_type_label}) → {output_file}")
             
             click.echo()
             click.echo(click.style("プレビュー画像を出力しました！", fg='green', bold=True))
             click.echo()
             click.echo("次のステップ:")
-            click.echo("  1. 出力された画像をAI（Claude等）に見せる")
-            click.echo("  2. 「この画像のどこでカットすべきか教えて」と質問")
+            click.echo("  1. 出力された画像をAI（Claude等）に一枚ずつ見せる")
+            click.echo("  2. 「この画像は{ページタイプ}です。左右ページ別に最適なクロップ位置を教えて」と質問")
             click.echo("  3. AIが提案した値で crop コマンドを実行:")
             click.echo()
-            click.echo(f"     pdf-kindle crop {input_pdf} --left 10 --right 10 --top 5 --bottom 5")
+            click.echo(f"     # 左右ページ別設定の例（縦開きの場合）")
+            click.echo(f"     pdf-kindle crop {input_pdf} --binding {binding} \\")
+            click.echo(f"       --left-left 15 --left-right 5 --left-top 5 --left-bottom 5 \\")
+            click.echo(f"       --right-left 5 --right-right 15 --right-top 5 --right-bottom 5")
             click.echo()
             
             # 画像サイズ情報を表示
@@ -172,9 +229,12 @@ def preview(input_pdf, output_dir, pages, num_pages, dpi):
                 click.echo(f"画像サイズ: {width} x {height} px")
                 click.echo()
                 click.echo("AIへの質問例:")
-                click.echo("  「このPDFページ画像を見て、余白を除去するための")
+                click.echo("  「このPDFページ画像を見て、左右ページ別に余白を除去するための")
                 click.echo("   クロップ位置を%で教えてください。")
-                click.echo("   左からX%、右からY%、上からZ%、下からW%の形式で。」")
+                click.echo("   - 左ページ: 左からX%、右からY%、上からZ%、下からW%")
+                click.echo("   - 右ページ: 左からA%、右からB%、上からC%、下からD%」")
+                click.echo()
+                click.echo("【重要】画像は一枚ずつ表示して処理してください（複数同時表示はAPI errorの原因になります）")
                 
     except Exception as e:
         click.echo(click.style(f"エラー: {e}", fg='red'), err=True)
@@ -200,39 +260,114 @@ def preview(input_pdf, output_dir, pages, num_pages, dpi):
     '--left',
     type=float,
     default=0,
-    help='左からカットする割合（%、デフォルト: 0）'
+    help='左からカットする割合（%、デフォルト: 0）- 全ページ共通'
 )
 @click.option(
     '--right',
     type=float,
     default=0,
-    help='右からカットする割合（%、デフォルト: 0）'
+    help='右からカットする割合（%、デフォルト: 0）- 全ページ共通'
 )
 @click.option(
     '--top',
     type=float,
     default=0,
-    help='上からカットする割合（%、デフォルト: 0）'
+    help='上からカットする割合（%、デフォルト: 0）- 全ページ共通'
 )
 @click.option(
     '--bottom',
     type=float,
     default=0,
-    help='下からカットする割合（%、デフォルト: 0）'
+    help='下からカットする割合（%、デフォルト: 0）- 全ページ共通'
+)
+@click.option(
+    '--binding',
+    type=click.Choice(['vertical', 'horizontal']),
+    default='vertical',
+    help='開き方 (vertical=縦開き/右綴じ, horizontal=横開き/左綴じ)'
+)
+@click.option(
+    '--first-page-right/--first-page-left',
+    default=True,
+    help='最初のページを右ページとして扱う（デフォルト: 右ページ）'
+)
+@click.option(
+    '--left-left',
+    type=float,
+    default=None,
+    help='左ページの左からカットする割合（%）'
+)
+@click.option(
+    '--left-right',
+    type=float,
+    default=None,
+    help='左ページの右からカットする割合（%）'
+)
+@click.option(
+    '--left-top',
+    type=float,
+    default=None,
+    help='左ページの上からカットする割合（%）'
+)
+@click.option(
+    '--left-bottom',
+    type=float,
+    default=None,
+    help='左ページの下からカットする割合（%）'
+)
+@click.option(
+    '--right-left',
+    type=float,
+    default=None,
+    help='右ページの左からカットする割合（%）'
+)
+@click.option(
+    '--right-right',
+    type=float,
+    default=None,
+    help='右ページの右からカットする割合（%）'
+)
+@click.option(
+    '--right-top',
+    type=float,
+    default=None,
+    help='右ページの上からカットする割合（%）'
+)
+@click.option(
+    '--right-bottom',
+    type=float,
+    default=None,
+    help='右ページの下からカットする割合（%）'
 )
 @click.option(
     '-v', '--verbose',
     is_flag=True,
     help='詳細な出力を表示'
 )
-def crop(input_pdf, output, device, left, right, top, bottom, verbose):
+@click.option(
+    '--clean-preview/--no-clean-preview',
+    default=True,
+    help='処理完了後にpreviewフォルダをクリーンアップする（デフォルト: オン）'
+)
+def crop(input_pdf, output, device, left, right, top, bottom,
+         binding, first_page_right,
+         left_left, left_right, left_top, left_bottom,
+         right_left, right_right, right_top, right_bottom,
+         verbose, clean_preview):
     """
     指定した割合でPDFをクロップします。
     
     AIが提案したクロップ位置を指定して実行します。
+    左右ページで異なる設定が可能です。
     
     例:
+      # 全ページ共通設定
       pdf-kindle crop input/book.pdf --left 10 --right 15 --top 5 --bottom 5
+      
+      # 左右ページ別設定（縦開き）
+      pdf-kindle crop input/book.pdf --binding vertical \\
+        --left-left 15 --left-right 5 --left-top 5 --left-bottom 5 \\
+        --right-left 5 --right-right 15 --right-top 5 --right-bottom 5
     """
     import fitz
     
@@ -242,10 +377,36 @@ def crop(input_pdf, output, device, left, right, top, bottom, verbose):
         input_path = Path(input_pdf)
         output = str(output_dir / f"{input_path.stem}_kindle.pdf")
     
+    # 左右ページ別設定が使用されているかチェック
+    use_page_specific = any(v is not None for v in [
+        left_left, left_right, left_top, left_bottom,
+        right_left, right_right, right_top, right_bottom
+    ])
+    
+    # 開き方のラベル
+    binding_label = "縦開き（右綴じ）" if binding == 'vertical' else "横開き（左綴じ）"
+    
     click.echo(f"入力ファイル: {input_pdf}")
     click.echo(f"出力ファイル: {output}")
     click.echo(f"対象デバイス: {device}")
-    click.echo(f"クロップ設定: 左{left}%, 右{right}%, 上{top}%, 下{bottom}%")
+    
+    if use_page_specific:
+        click.echo(f"開き方: {binding_label}")
+        click.echo(f"クロップ設定（左右ページ別）:")
+        # 左ページ設定（Noneの場合はデフォルト値を使用）
+        ll = left_left if left_left is not None else left
+        lr = left_right if left_right is not None else right
+        lt = left_top if left_top is not None else top
+        lb = left_bottom if left_bottom is not None else bottom
+        click.echo(f"  左ページ: 左{ll}%, 右{lr}%, 上{lt}%, 下{lb}%")
+        # 右ページ設定
+        rl = right_left if right_left is not None else left
+        rr = right_right if right_right is not None else right
+        rt = right_top if right_top is not None else top
+        rb = right_bottom if right_bottom is not None else bottom
+        click.echo(f"  右ページ: 左{rl}%, 右{rr}%, 上{rt}%, 下{rb}%")
+    else:
+        click.echo(f"クロップ設定: 左{left}%, 右{right}%, 上{top}%, 下{bottom}%")
     click.echo()
     
     try:
@@ -267,11 +428,32 @@ def crop(input_pdf, output, device, left, right, top, bottom, verbose):
             page = src_doc[i]
             rect = page.rect
             
+            # ページタイプを判定
+            page_type = PDFProcessor.determine_page_type(i, first_page_right)
+            
+            # クロップ設定を決定
+            if use_page_specific:
+                if page_type == 'left':
+                    crop_left = left_left if left_left is not None else left
+                    crop_right = left_right if left_right is not None else right
+                    crop_top = left_top if left_top is not None else top
+                    crop_bottom = left_bottom if left_bottom is not None else bottom
+                else:  # right
+                    crop_left = right_left if right_left is not None else left
+                    crop_right = right_right if right_right is not None else right
+                    crop_top = right_top if right_top is not None else top
+                    crop_bottom = right_bottom if right_bottom is not None else bottom
+            else:
+                crop_left = left
+                crop_right = right
+                crop_top = top
+                crop_bottom = bottom
+            
             # クロップ領域を計算
-            crop_x0 = rect.x0 + rect.width * (left / 100)
-            crop_x1 = rect.x1 - rect.width * (right / 100)
-            crop_y0 = rect.y0 + rect.height * (top / 100)
-            crop_y1 = rect.y1 - rect.height * (bottom / 100)
+            crop_x0 = rect.x0 + rect.width * (crop_left / 100)
+            crop_x1 = rect.x1 - rect.width * (crop_right / 100)
+            crop_y0 = rect.y0 + rect.height * (crop_top / 100)
+            crop_y1 = rect.y1 - rect.height * (crop_bottom / 100)
             
             crop_rect = fitz.Rect(crop_x0, crop_y0, crop_x1, crop_y1)
             
@@ -309,6 +491,12 @@ def crop(input_pdf, output, device, left, right, top, bottom, verbose):
             output_size = os.path.getsize(output)
             click.echo(f"入力ファイルサイズ: {input_size / 1024:.1f} KB")
             click.echo(f"出力ファイルサイズ: {output_size / 1024:.1f} KB")
+        
+        # previewフォルダのクリーンアップ
+        if clean_preview:
+            deleted = clean_preview_folder(DEFAULT_PREVIEW_DIR, verbose)
+            if deleted > 0:
+                click.echo(f"✓ previewフォルダをクリーンアップしました（{deleted}ファイル削除）")
             
     except Exception as e:
         click.echo(click.style(f"エラー: {e}", fg='red'), err=True)
@@ -569,6 +757,122 @@ def process_single_pdf(
         if verbose:
             traceback.print_exc()
         return False
+
+
+@cli.command()
+@click.argument('input_pdf', type=click.Path(exists=True))
+@click.option(
+    '-o', '--output',
+    type=click.Path(),
+    help='出力ファイルパス（指定しない場合はoutputフォルダに出力）'
+)
+@click.option(
+    '-v', '--verbose',
+    is_flag=True,
+    help='詳細な出力を表示'
+)
+def reorder(input_pdf, output, verbose):
+    """
+    2ページごとに逆順になっているページを正しい順序に並び替えます。
+    
+    見開きPDFを分割した際に 2,1,4,3,6,5... となったページ順を
+    1,2,3,4,5,6... の正しい順序に修正します。
+    
+    例:
+      pdf-kindle reorder input/book.pdf
+    """
+    import fitz
+    
+    if not output:
+        output_dir = Path(DEFAULT_OUTPUT_DIR)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        input_path = Path(input_pdf)
+        output = str(output_dir / f"{input_path.stem}_reordered.pdf")
+    
+    click.echo(f"入力ファイル: {input_pdf}")
+    click.echo(f"出力ファイル: {output}")
+    click.echo()
+    
+    try:
+        src_doc = fitz.open(input_pdf)
+        total_pages = len(src_doc)
+        
+        click.echo(f"総ページ数: {total_pages}")
+        
+        if total_pages < 2:
+            click.echo(click.style("警告: ページ数が2未満のため、並び替えは不要です", fg='yellow'))
+            src_doc.close()
+            return
+        
+        # 新しいページ順序を計算
+        # 元の順序: 2,1,4,3,6,5... → 正しい順序: 1,2,3,4,5,6...
+        new_order = []
+        for i in range(0, total_pages, 2):
+            if i + 1 < total_pages:
+                # 2ページセットの場合: 順序を入れ替え
+                new_order.append(i + 1)  # 2番目のページを先に
+                new_order.append(i)      # 1番目のページを後に
+            else:
+                # 奇数ページで最後の1ページの場合
+                new_order.append(i)
+        
+        if verbose:
+            click.echo(f"並び替え: {[p+1 for p in range(total_pages)]} → {[p+1 for p in new_order]}")
+        
+        click.echo()
+        click.echo("ページを並び替え中...")
+        
+        # 新しいPDFを作成
+        output_doc = fitz.open()
+        
+        for i, src_page_idx in enumerate(new_order):
+            src_page = src_doc[src_page_idx]
+            rect = src_page.rect
+            
+            # 新しいページを作成
+            new_page = output_doc.new_page(width=rect.width, height=rect.height)
+            new_page.show_pdf_page(rect, src_doc, src_page_idx)
+            
+            print_progress(i + 1, total_pages)
+        
+        output_doc.save(output, garbage=4, deflate=True)
+        output_doc.close()
+        src_doc.close()
+        
+        click.echo()
+        click.echo(click.style("✓ ページ順序の修正完了！", fg='green', bold=True))
+        click.echo(f"出力: {output}")
+        
+    except Exception as e:
+        click.echo(click.style(f"エラー: {e}", fg='red'), err=True)
+        import traceback
+        if verbose:
+            traceback.print_exc()
+        sys.exit(1)
+
+
+@cli.command()
+@click.option(
+    '-v', '--verbose',
+    is_flag=True,
+    help='詳細な出力を表示'
+)
+def clean(verbose):
+    """
+    previewフォルダ内の画像ファイルを削除します。
+    
+    プレビュー画像が不要になった場合に使用します。
+    cropコマンドはデフォルトで処理完了後に自動クリーンアップします。
+    
+    例:
+      pdf-kindle clean
+    """
+    deleted = clean_preview_folder(DEFAULT_PREVIEW_DIR, verbose)
+    
+    if deleted > 0:
+        click.echo(click.style(f"✓ {deleted}個のファイルを削除しました", fg='green', bold=True))
+    else:
+        click.echo("削除するファイルがありませんでした")
 
 
 # 後方互換性のためのエイリアス
